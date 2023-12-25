@@ -1,7 +1,5 @@
 #![windows_subsystem = "windows"]
 
-use clap::Arg;
-use clap::Command;
 use log::debug;
 use log::error;
 use log::info;
@@ -150,36 +148,27 @@ fn main() -> Result<(), String> {
         .build()
 }
 
+#[derive(argh::FromArgs)]
+#[argh(description = "A no-nonsense hardware-accelerated image viewer")]
+struct CliOptions {
+    #[argh(positional, description = "display this image")]
+    input: PathBuf,
+
+    #[argh(option, short = 'l', description = "listen on port")]
+    listen_port: Option<u16>,
+
+    #[argh(switch, description = "chainload on Mac")]
+    chainload: bool,
+}
+
 fn init(gfx: &mut Graphics, plugins: &mut Plugins) -> OculanteState {
     info!("Now matching arguments {:?}", std::env::args());
-    // Filter out strange mac args
-    let args: Vec<String> = std::env::args().filter(|a| !a.contains("psn_")).collect();
 
-    let matches = Command::new("Oculante")
-        .arg(
-            Arg::new("INPUT")
-                .help("Display this image")
-                // .required(true)
-                .index(1),
-        )
-        .arg(
-            Arg::new("l")
-                .short('l')
-                .help("Listen on port")
-                .takes_value(true),
-        )
-        .arg(
-            Arg::new("chainload")
-                .required(false)
-                .takes_value(false)
-                .short('c')
-                .help("Chainload on Mac"),
-        )
-        .get_matches_from(args);
+    let cli_options = argh::from_env::<CliOptions>();
 
     debug!("Completed argument parsing.");
 
-    let maybe_img_location = matches.value_of("INPUT").map(PathBuf::from);
+    let maybe_img_location = Some(cli_options.input);
 
     let mut state = OculanteState {
         texture_channel: mpsc::channel(),
@@ -239,16 +228,11 @@ fn init(gfx: &mut Graphics, plugins: &mut Plugins) -> OculanteState {
         }
     }
 
-    if let Some(port) = matches.value_of("l") {
-        match port.parse::<i32>() {
-            Ok(p) => {
-                state.send_message_info(&format!("Listening on {p}"));
-                recv(p, state.texture_channel.0.clone());
-                state.current_path = Some(PathBuf::from(&format!("network port {p}")));
-                state.network_mode = true;
-            }
-            Err(_) => error!("Port must be a number"),
-        }
+    if let Some(port) = cli_options.listen_port {
+        state.send_message_info(&format!("Listening on {port}"));
+        recv(port, state.texture_channel.0.clone());
+        state.current_path = Some(PathBuf::from(&format!("network port {port}")));
+        state.network_mode = true;
     }
 
     // Set up egui style
